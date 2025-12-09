@@ -10,6 +10,7 @@ import authRoutes from './routes/authRoutes.js';
 import recipeRoutes from './routes/recipeRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
 import ratingRoutes from './routes/ratingRoutes.js';
+import { verifyToken } from './middleware/auth.js';
 
 const app = express();
 
@@ -49,6 +50,27 @@ app.use(cors({
 // Increase body parser limits to allow larger payloads (e.g. base64 images)
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_BODY_SIZE }));
+
+// Optional auth middleware: if a valid Bearer token is provided, set `req.userId`.
+// This allows public routes (e.g. POST /api/recipes) to know the user when a token
+// is present while keeping the existing protected routes that require `authMiddleware`.
+app.use((req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return next();
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2) return next();
+    const token = parts[1];
+    const decoded = verifyToken(token);
+    if (decoded && decoded.id) {
+      req.userId = decoded.id;
+    }
+  } catch (err) {
+    // Don't fail the request for optional auth; just continue without userId
+    console.warn('Optional auth failed to decode token:', err && err.message ? err.message : err);
+  }
+  next();
+});
 
 // Wrap startup in async IIFE to properly await DB connection
 (async () => {
