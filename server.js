@@ -32,6 +32,8 @@ if (ALLOWED_ORIGINS) {
 // Log the active allowList at startup for debugging (safe to keep)
 console.log('🔐 CORS allowList:', allowList);
 
+const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '10mb';
+
 app.use(cors({
   origin: (origin, callback) => {
     // allow non-browser requests (e.g. curl, server-side)
@@ -44,8 +46,9 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase body parser limits to allow larger payloads (e.g. base64 images)
+app.use(express.json({ limit: MAX_BODY_SIZE }));
+app.use(express.urlencoded({ extended: true, limit: MAX_BODY_SIZE }));
 
 // Wrap startup in async IIFE to properly await DB connection
 (async () => {
