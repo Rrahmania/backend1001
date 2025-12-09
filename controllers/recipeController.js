@@ -80,10 +80,20 @@ export const getRecipesByCategory = async (req, res) => {
 // Create recipe (Protected)
 export const createRecipe = async (req, res) => {
   try {
-    const { title, description, category, ingredients, instructions, image, prepTime, cookTime, servings, difficulty } = req.body;
+    // When multer is used, file will be in req.file and form fields in req.body
+    let { title, description, category, ingredients, instructions, image, prepTime, cookTime, servings, difficulty } = req.body || {};
+
+    // If a file was uploaded via multipart/form-data, prefer that as the image
+    if (req.file) {
+      // Build an accessible URL for the uploaded file
+      const proto = req.protocol;
+      const host = req.get('host');
+      image = `${proto}://${host}/uploads/${req.file.filename}`;
+    }
 
     // Debug log: print incoming payload and user id to help diagnose malformed requests
-    console.log('POST /api/recipes - body:', req.body);
+    console.log('POST /api/recipes - body (fields):', req.body);
+    if (req.file) console.log('POST /api/recipes - file saved:', req.file.path);
     console.log('POST /api/recipes - userId:', req.userId);
 
     // Basic validation with clear messages
