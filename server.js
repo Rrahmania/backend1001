@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { connectDB } from './db.js';
-import { PORT } from './config.js';
+import { PORT, FRONTEND_URL, ALLOWED_ORIGINS } from './config.js';
 import authRoutes from './routes/authRoutes.js';
 import recipeRoutes from './routes/recipeRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
@@ -10,8 +10,33 @@ import ratingRoutes from './routes/ratingRoutes.js';
 const app = express();
 
 // Middleware
+// Build allowlist from ALLOWED_ORIGINS or FRONTEND_URL with sensible defaults
+const defaultLocal = 'http://localhost:5173';
+// Add your deployed frontend origin here as a safe default for convenience.
+const defaultFrontend = 'https://our-recepi081.vercel.app';
+
+let allowList = [];
+if (ALLOWED_ORIGINS) {
+  allowList = ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean);
+} else if (FRONTEND_URL) {
+  allowList = [FRONTEND_URL];
+} else {
+  // Fallback allowlist: local dev + the deployed frontend (convenience)
+  allowList = [defaultLocal, defaultFrontend];
+}
+
+// Log the active allowList at startup for debugging (safe to keep)
+console.log('🔐 CORS allowList:', allowList);
+
 app.use(cors({
-  origin: 'http://localhost:5173', // Vite dev server port
+  origin: (origin, callback) => {
+    // allow non-browser requests (e.g. curl, server-side)
+    if (!origin) return callback(null, true);
+    if (allowList.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS policy: origin not allowed'), false);
+  },
   credentials: true,
 }));
 app.use(express.json());
