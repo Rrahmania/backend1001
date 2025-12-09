@@ -82,18 +82,45 @@ export const createRecipe = async (req, res) => {
   try {
     const { title, description, category, ingredients, instructions, image, prepTime, cookTime, servings, difficulty } = req.body;
 
-    // Validasi
-    if (!title || !category || !ingredients || !instructions) {
-      return res.status(400).json({ message: 'Lengkapi field: title, category, ingredients, instructions' });
+    // Debug log: print incoming payload and user id to help diagnose malformed requests
+    console.log('POST /api/recipes - body:', req.body);
+    console.log('POST /api/recipes - userId:', req.userId);
+
+    // Basic validation with clear messages
+    if (!title || typeof title !== 'string' || title.trim().length < 3) {
+      return res.status(400).json({ message: 'Field `title` wajib (minimal 3 karakter)' });
+    }
+
+    if (!category || typeof category !== 'string') {
+      return res.status(400).json({ message: 'Field `category` wajib dan harus berupa string' });
+    }
+
+    if (!instructions || typeof instructions !== 'string' || instructions.trim().length === 0) {
+      return res.status(400).json({ message: 'Field `instructions` wajib' });
+    }
+
+    // Parse ingredients safely: accept array or JSON-stringified array
+    let parsedIngredients = ingredients;
+    try {
+      if (typeof parsedIngredients === 'string') {
+        parsedIngredients = parsedIngredients.trim() === '' ? [] : JSON.parse(parsedIngredients);
+      }
+    } catch (parseErr) {
+      console.warn('Failed to parse ingredients JSON:', parseErr && parseErr.message);
+      return res.status(400).json({ message: 'Field `ingredients` harus berupa array atau JSON string array' });
+    }
+
+    if (!Array.isArray(parsedIngredients) || parsedIngredients.length === 0) {
+      return res.status(400).json({ message: 'Field `ingredients` wajib dan harus berisi setidaknya 1 item' });
     }
 
     const newRecipe = await Recipe.create({
-      title,
-      description,
-      category,
-      ingredients: Array.isArray(ingredients) ? ingredients : JSON.parse(ingredients),
-      instructions,
-      image,
+      title: title.trim(),
+      description: description || null,
+      category: category.trim(),
+      ingredients: parsedIngredients,
+      instructions: instructions.trim(),
+      image: image || null,
       prepTime,
       cookTime,
       servings,
@@ -106,6 +133,7 @@ export const createRecipe = async (req, res) => {
       recipe: newRecipe,
     });
   } catch (error) {
+    console.error('Error in createRecipe:', error && error.stack ? error.stack : error);
     res.status(500).json({ message: 'Error membuat resep', error: error.message });
   }
 };
