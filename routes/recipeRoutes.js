@@ -17,8 +17,9 @@ router.get('/', getAllRecipes);
 router.get('/:id', getRecipeById);
 router.get('/category/:category', getRecipesByCategory);
 
-// Protected routes
-router.post('/', authMiddleware, createRecipe);
+// Protected routes (update/delete/user recipes remain protected)
+// Allow public POST so users can submit recipes without authentication
+router.post('/', createRecipe);
 router.put('/:id', authMiddleware, updateRecipe);
 router.delete('/:id', authMiddleware, deleteRecipe);
 router.get('/user/my-recipes', authMiddleware, getUserRecipes);
