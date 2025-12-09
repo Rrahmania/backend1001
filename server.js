@@ -39,6 +39,7 @@ app.use(cors({
     if (allowList.indexOf(origin) !== -1) {
       return callback(null, true);
     }
+    // Return an error to the CORS middleware. We'll handle it in the error handler below
     return callback(new Error('CORS policy: origin not allowed'), false);
   },
   credentials: true,
@@ -62,6 +63,11 @@ app.get('/api/health', (req, res) => {
   res.json({ message: 'Server running smoothly!' });
 });
 
+// Debug endpoint: show active CORS allowList (safe to expose for debugging)
+app.get('/api/debug/cors', (req, res) => {
+  res.json({ allowList });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route tidak ditemukan' });
@@ -69,7 +75,15 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Unhandled error:', err && err.stack ? err.stack : err);
+
+  // Make CORS rejections clearer to the client and use 403
+  if (err && typeof err.message === 'string' && err.message.includes('CORS policy')) {
+    const origin = req.headers.origin || null;
+    return res.status(403).json({ message: 'CORS error: origin not allowed', error: err.message, origin, allowList });
+  }
+
+  // Generic server error
   res.status(500).json({ message: 'Server error', error: err.message });
 });
 
