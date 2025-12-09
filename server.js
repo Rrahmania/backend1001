@@ -1,7 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import { connectDB } from './db.js';
-import { PORT, FRONTEND_URL, ALLOWED_ORIGINS } from './config.js';
+import { PORT } from './config.js';
+// Read FRONTEND_URL / ALLOWED_ORIGINS directly from environment.
+// `config.js` already calls dotenv.config(), so process.env will be populated when this file runs.
+const FRONTEND_URL = process.env.FRONTEND_URL || null;
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || null;
 import authRoutes from './routes/authRoutes.js';
 import recipeRoutes from './routes/recipeRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
