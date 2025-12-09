@@ -1,0 +1,1769 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+config.js
+controllers/authController.js
+controllers/favoriteController.js
+controllers/ratingController.js
+controllers/recipeController.js
+db.js
+docker-compose.yml
+Dockerfile.postgres
+init.sql
+middleware/auth.js
+middleware/requireAuth.js
+middleware/tokenBlacklist.js
+models/Favorite.js
+models/Rating.js
+models/Recipe.js
+models/User.js
+package.json
+pg_hba.conf
+README.md
+routes/authRoutes.js
+routes/favoriteRoutes.js
+routes/ratingRoutes.js
+routes/recipeRoutes.js
+scripts/seed.js
+scripts/test_api.js
+server.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+node_modules/
+.env
+.env.local
+.DS_Store
+*.log
+</file>
+
+<file path="config.js">
+import dotenv from 'dotenv';
+dotenv.config();
+
+const PORT = process.env.PORT || 5010;
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = parseInt(process.env.DB_PORT, 10) || 5432;
+const DB_NAME = process.env.DB_NAME || 'resep_DB';
+const DB_USER = process.env.DB_USER || 'postgres';
+const DB_PASSWORD = process.env.DB_PASSWORD || 'Mutia_18';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
+
+export { PORT, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, JWT_SECRET, JWT_EXPIRE };
+</file>
+
+<file path="controllers/authController.js">
+import bcrypt from 'bcryptjs';
+import { User } from '../db.js';
+import { generateToken } from '../middleware/auth.js';
+import { addToken } from '../middleware/tokenBlacklist.js';
+import { Op } from 'sequelize';
+
+// Register
+export const register = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Validasi input
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Lengkapi semua field' });
+    }
+
+    // Cek apakah user sudah ada
+    const existingUser = await User.findOne({
+      where: {
+        [Op.or]: [{ email }, { name }],
+      },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: 'Email atau nama pengguna sudah terdaftar',
+        field: existingUser.email === email ? 'email' : 'name',
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Buat user baru
+    const newUser = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    const token = generateToken(newUser.id);
+
+    res.status(201).json({
+      message: 'Registrasi berhasil',
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        avatar: newUser.avatar,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error registrasi', error: error.message });
+  }
+};
+
+// Login
+export const login = async (req, res) => {
+  try {
+    // Accept either email or name for login
+    const { identifier, password, email, name } = req.body;
+    const idValue = identifier || email || name;
+
+    // Validasi input
+    if (!idValue || !password) {
+      return res.status(400).json({ message: 'Lengkapi semua field' });
+    }
+
+    // Cari user by email OR name
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [{ email: idValue }, { name: idValue }],
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: 'Nama/email atau password salah' });
+    }
+
+    // Cek password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Nama/email atau password salah' });
+    }
+
+    const token = generateToken(user.id);
+
+    res.status(200).json({
+      message: 'Login berhasil',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error login', error: error.message });
+  }
+};
+
+// Get Current User
+export const getCurrentUser = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User tidak ditemukan' });
+    }
+
+    res.status(200).json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil data user', error: error.message });
+  }
+};
+
+// Logout
+export const logout = (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      addToken(token);
+    }
+    return res.status(200).json({ message: 'Logout berhasil' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error saat logout', error: error.message });
+  }
+};
+</file>
+
+<file path="controllers/favoriteController.js">
+import { Favorite, Recipe, User } from '../db.js';
+
+// Get user's favorites
+export const getUserFavorites = async (req, res) => {
+  try {
+    const favorites = await Favorite.findAll({
+      where: { userId: req.userId },
+      include: [
+        {
+          model: Recipe,
+          as: 'recipe',
+          include: [
+            {
+              model: User,
+              as: 'author',
+              attributes: ['id', 'name', 'avatar'],
+            },
+          ],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.status(200).json({
+      message: 'Berhasil mengambil favorit',
+      favorites,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil favorit', error: error.message });
+  }
+};
+
+// Add to favorites
+export const addFavorite = async (req, res) => {
+  try {
+    const { recipeId } = req.body;
+
+    if (!recipeId) {
+      return res.status(400).json({ message: 'recipeId harus diisi' });
+    }
+
+    // Cek apakah resep ada
+    const recipe = await Recipe.findByPk(recipeId);
+    if (!recipe) {
+      return res.status(404).json({ message: 'Resep tidak ditemukan' });
+    }
+
+    // Cek apakah sudah di-favorite
+    const existingFavorite = await Favorite.findOne({
+      where: { userId: req.userId, recipeId },
+    });
+
+    if (existingFavorite) {
+      return res.status(409).json({ message: 'Resep sudah ditambahkan ke favorit' });
+    }
+
+    const favorite = await Favorite.create({
+      userId: req.userId,
+      recipeId,
+    });
+
+    res.status(201).json({
+      message: 'Resep berhasil ditambahkan ke favorit',
+      favorite,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error menambah favorit', error: error.message });
+  }
+};
+
+// Remove from favorites
+export const removeFavorite = async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+
+    const favorite = await Favorite.findOne({
+      where: { userId: req.userId, recipeId },
+    });
+
+    if (!favorite) {
+      return res.status(404).json({ message: 'Favorit tidak ditemukan' });
+    }
+
+    await favorite.destroy();
+
+    res.status(200).json({
+      message: 'Resep berhasil dihapus dari favorit',
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error menghapus favorit', error: error.message });
+  }
+};
+
+// Check if recipe is favorite
+export const isFavorite = async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+
+    const favorite = await Favorite.findOne({
+      where: { userId: req.userId, recipeId },
+    });
+
+    res.status(200).json({
+      isFavorite: !!favorite,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengecek favorit', error: error.message });
+  }
+};
+</file>
+
+<file path="controllers/ratingController.js">
+import { Rating, Recipe, User } from '../db.js';
+
+// Add or update a rating (one per user per recipe)
+export const upsertRating = async (req, res) => {
+  try {
+    const { recipeId, score, comment } = req.body;
+    const userId = req.userId;
+
+    if (!recipeId || !score) return res.status(400).json({ message: 'recipeId dan score harus diisi' });
+    if (score < 1 || score > 5) return res.status(400).json({ message: 'score harus antara 1-5' });
+
+    const recipe = await Recipe.findByPk(recipeId);
+    if (!recipe) return res.status(404).json({ message: 'Resep tidak ditemukan' });
+
+    const [rating, created] = await Rating.upsert({ userId, recipeId, score, comment }, { returning: true });
+
+    return res.status(200).json({ message: created ? 'Rating dibuat' : 'Rating diperbarui', rating });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error menyimpan rating', error: error.message });
+  }
+};
+
+// Get ratings for a recipe and average
+export const getRatingsByRecipe = async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+    const recipe = await Recipe.findByPk(recipeId);
+    if (!recipe) return res.status(404).json({ message: 'Resep tidak ditemukan' });
+
+    const ratings = await Rating.findAll({ where: { recipeId }, include: [{ model: User, as: 'user', attributes: ['id','name','avatar'] }], order: [['createdAt','DESC']] });
+    const avg = ratings.length ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length) : 0;
+
+    return res.status(200).json({ message: 'Ratings fetched', average: Number(avg.toFixed(2)), count: ratings.length, ratings });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error mengambil rating', error: error.message });
+  }
+};
+
+// Remove rating by current user for a recipe
+export const removeRating = async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+    const userId = req.userId;
+
+    const deleted = await Rating.destroy({ where: { userId, recipeId } });
+    if (!deleted) return res.status(404).json({ message: 'Rating tidak ditemukan' });
+
+    return res.status(200).json({ message: 'Rating dihapus' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error menghapus rating', error: error.message });
+  }
+};
+</file>
+
+<file path="controllers/recipeController.js">
+import { Recipe, User } from '../db.js';
+
+// Get all recipes
+export const getAllRecipes = async (req, res) => {
+  try {
+    const recipes = await Recipe.findAll({
+      include: [
+        {
+          model: User,
+          as: 'author',
+          attributes: ['id', 'name', 'avatar'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.status(200).json({
+      message: 'Berhasil mengambil semua resep',
+      recipes,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil resep', error: error.message });
+  }
+};
+
+// Get recipe by ID
+export const getRecipeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const recipe = await Recipe.findByPk(id, {
+      include: [
+        {
+          model: User,
+          as: 'author',
+          attributes: ['id', 'name', 'avatar'],
+        },
+      ],
+    });
+
+    if (!recipe) {
+      return res.status(404).json({ message: 'Resep tidak ditemukan' });
+    }
+
+    res.status(200).json({
+      message: 'Berhasil mengambil resep',
+      recipe,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil resep', error: error.message });
+  }
+};
+
+// Get recipes by category
+export const getRecipesByCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+
+    const recipes = await Recipe.findAll({
+      where: { category },
+      include: [
+        {
+          model: User,
+          as: 'author',
+          attributes: ['id', 'name', 'avatar'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.status(200).json({
+      message: `Berhasil mengambil resep kategori ${category}`,
+      recipes,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil resep', error: error.message });
+  }
+};
+
+// Create recipe (Protected)
+export const createRecipe = async (req, res) => {
+  try {
+    const { title, description, category, ingredients, instructions, image, prepTime, cookTime, servings, difficulty } = req.body;
+
+    // Validasi
+    if (!title || !category || !ingredients || !instructions) {
+      return res.status(400).json({ message: 'Lengkapi field: title, category, ingredients, instructions' });
+    }
+
+    const newRecipe = await Recipe.create({
+      title,
+      description,
+      category,
+      ingredients: Array.isArray(ingredients) ? ingredients : JSON.parse(ingredients),
+      instructions,
+      image,
+      prepTime,
+      cookTime,
+      servings,
+      difficulty,
+      userId: req.userId,
+    });
+
+    res.status(201).json({
+      message: 'Resep berhasil dibuat',
+      recipe: newRecipe,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error membuat resep', error: error.message });
+  }
+};
+
+// Update recipe (Protected)
+export const updateRecipe = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, category, ingredients, instructions, image, prepTime, cookTime, servings, difficulty } = req.body;
+
+    const recipe = await Recipe.findByPk(id);
+
+    if (!recipe) {
+      return res.status(404).json({ message: 'Resep tidak ditemukan' });
+    }
+
+    // Cek apakah user adalah pembuat resep
+    if (recipe.userId !== req.userId) {
+      return res.status(403).json({ message: 'Anda tidak memiliki izin untuk mengubah resep ini' });
+    }
+
+    await recipe.update({
+      title: title || recipe.title,
+      description: description || recipe.description,
+      category: category || recipe.category,
+      ingredients: ingredients ? (Array.isArray(ingredients) ? ingredients : JSON.parse(ingredients)) : recipe.ingredients,
+      instructions: instructions || recipe.instructions,
+      image: image || recipe.image,
+      prepTime: prepTime || recipe.prepTime,
+      cookTime: cookTime || recipe.cookTime,
+      servings: servings || recipe.servings,
+      difficulty: difficulty || recipe.difficulty,
+    });
+
+    res.status(200).json({
+      message: 'Resep berhasil diperbarui',
+      recipe,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengubah resep', error: error.message });
+  }
+};
+
+// Delete recipe (Protected)
+export const deleteRecipe = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const recipe = await Recipe.findByPk(id);
+
+    if (!recipe) {
+      return res.status(404).json({ message: 'Resep tidak ditemukan' });
+    }
+
+    // Cek apakah user adalah pembuat resep
+    if (recipe.userId !== req.userId) {
+      return res.status(403).json({ message: 'Anda tidak memiliki izin untuk menghapus resep ini' });
+    }
+
+    await recipe.destroy();
+
+    res.status(200).json({
+      message: 'Resep berhasil dihapus',
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error menghapus resep', error: error.message });
+  }
+};
+
+// Get user's recipes
+export const getUserRecipes = async (req, res) => {
+  try {
+    const recipes = await Recipe.findAll({
+      where: { userId: req.userId },
+      include: [
+        {
+          model: User,
+          as: 'author',
+          attributes: ['id', 'name', 'avatar'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.status(200).json({
+      message: 'Berhasil mengambil resep Anda',
+      recipes,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error mengambil resep', error: error.message });
+  }
+};
+</file>
+
+<file path="db.js">
+import { Sequelize } from 'sequelize';
+import { DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD } from './config.js';
+import defineUser from './models/User.js';
+import defineRecipe from './models/Recipe.js';
+import defineFavorite from './models/Favorite.js';
+import defineRating from './models/Rating.js';
+
+console.log(`🔍 Connecting to PostgreSQL:`, {
+  host: DB_HOST,
+  port: DB_PORT,
+  database: DB_NAME,
+  user: DB_USER,
+  password: DB_PASSWORD ? '***' : '(empty)',
+});
+
+const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
+  host: DB_HOST,
+  port: DB_PORT,
+  dialect: 'postgres',
+  logging: false, // Set true untuk melihat query
+});
+
+// Initialize models
+const User = defineUser(sequelize);
+const Recipe = defineRecipe(sequelize, User);
+const Favorite = defineFavorite(sequelize, User, Recipe);
+const Rating = defineRating(sequelize, User, Recipe);
+
+export const connectDB = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log(`✅ PostgreSQL Connected: ${DB_HOST}:${DB_PORT}/${DB_NAME}`);
+    
+    // Sync models (create table jika belum ada)
+    await sequelize.sync({ alter: true });
+    console.log('✅ Database tables synced');
+    
+    return sequelize;
+  } catch (error) {
+    console.error(`❌ Error connecting to PostgreSQL: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+export { User, Recipe, Favorite, Rating };
+export default sequelize;
+</file>
+
+<file path="docker-compose.yml">
+version: '3.8'
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: resep_app_postgres
+    env_file: 
+      - ./.env
+    environment:
+      # keep explicit defaults in case .env is missing
+      POSTGRES_DB: ${DB_NAME:-resep_database}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin123}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:latest
+    container_name: resep_app_adminer
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # Optional: backend service (uncomment to run inside Docker)
+  # backend:
+  #   build:
+  #     context: ..
+  #     dockerfile: backend/Dockerfile
+  #   container_name: resep_app_backend
+  #   env_file:
+  #     - ./.env
+  #   depends_on:
+  #     - postgres
+  #   ports:
+  #     - "5010:5010"
+  #   volumes:
+  #     - ..:/usr/src/app
+  #   command: npm run dev
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+</file>
+
+<file path="Dockerfile.postgres">
+FROM postgres:16-alpine
+
+# Copy init scripts (these run after DB is initialized)
+COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
+
+# Copy pg_hba.conf to a temp location
+COPY pg_hba.conf /tmp/pg_hba.conf
+
+# Create a setup script to copy pg_hba.conf after initialization
+RUN echo '#!/bin/sh\ncp /tmp/pg_hba.conf /var/lib/postgresql/data/pg_hba.conf\nchown postgres:postgres /var/lib/postgresql/data/pg_hba.conf\n' > /docker-entrypoint-initdb.d/00-setup-pg-hba.sh && chmod +x /docker-entrypoint-initdb.d/00-setup-pg-hba.sh
+
+# Set password encryption to scram-sha-256 for better security
+ENV POSTGRES_INITDB_ARGS="-c password_encryption=scram-sha-256"
+</file>
+
+<file path="init.sql">
+-- init.sql
+
+-- Set postgres user password with scram-sha-256 encryption
+ALTER ROLE postgres WITH PASSWORD 'admin123';
+
+-- Hapus tabel jika ada (untuk reset, hati-hati dalam production)
+DROP TABLE IF EXISTS update_resep;
+DROP TABLE IF EXISTS favorit;
+DROP TABLE IF EXISTS resep;
+DROP TABLE IF EXISTS kategori;
+DROP TABLE IF EXISTS users;
+
+-- Buat tabel users
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,     
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Buat tabel kategori
+CREATE TABLE kategori (
+    id SERIAL PRIMARY KEY,
+    nama_kategori VARCHAR(150) NOT NULL
+);
+
+-- Insert data ke tabel kategori
+INSERT INTO kategori (nama_kategori)
+VALUES
+('Daging'),
+('Ikan'),
+('Makanan Cepat saji'),
+('Sayuran'),
+('Makanan penutup');
+
+-- Buat tabel resep
+CREATE TABLE resep (
+    id SERIAL PRIMARY KEY,
+    nama_resep VARCHAR(150) NOT NULL,
+    deskripsi TEXT,
+    ingredients TEXT,
+    kategori_id INTEGER,
+    gambar TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (kategori_id) REFERENCES kategori(id)
+);
+
+-- Insert data ke tabel resep
+INSERT INTO resep (nama_resep, deskripsi, ingredients, kategori_id, gambar)
+VALUES
+('Ayam Geprek', 
+ 'Ayam goreng sambal bawang pedas.', 
+ 'Ayam, cabai, bawang', 
+ 1, 
+ 'https://img-global.cpcdn.com/recipes/df40bcf6eefca280/680x781cq80/ayam-geprek-simple-foto-resep-utama.jpg'),
+
+('Tumis Labu Siam Rebon Wortel',
+ 'Sayur labu dan wortel yang dipadu.',
+ E'1 buah labu siam
+1 buah wortel
+1 sdm rebon
+100 ml air
+5 siung bawang merah
+3 siung bawang putih
+2 cabe merah
+1 sdm saus tiram
+1 sdt gula
+1 sdt kaldu
+1/2 sdt garam',
+ 4,
+ 'https://img-global.cpcdn.com/recipes/a840f3239356f864/300x426f0.5_0.5_1.0q80/tumis-labu-siam-rebon-wortel-foto-resep-utama.webp'),
+
+('Ikan Nila Segar Asam Manis',
+ 'Perpaduan ikan nila dengan nanas dan bombai.',
+ E'Ikan nila 1 ekor
+Nanas
+Bawang bombay
+Bawang putih
+Bawang merah
+Tomat
+Cabe merah
+Daun bawang
+Saus tomat
+Saus sambal
+Penyedap
+Garam
+Merica',
+ 2,
+ 'https://img-global.cpcdn.com/recipes/e8a54ad3af478ddf/640x640sq80/photo.webp'),
+
+('Kebab Ayam',
+ 'Ayam dan sayuran yang digabung.',
+ E'3 roll wrap
+Isian ayam
+Tomat iris
+Timun iris
+Selada',
+ 3,
+ 'https://img-global.cpcdn.com/recipes/5fbf8244cf4d03e9/300x426f0.5_0.5_1.0q80/kebab-ayam-foto-resep-utama.webp'),
+
+('Kolak Labu Kuning',
+ 'Perpaduan santan dengan pisang dan ubi dengan aroma daun pandan.',
+ E'1/2 labu kuning
+Gula merah
+Santan
+Garam
+Air',
+ 5,
+ 'https://img-global.cpcdn.com/recipes/2b8ce47b5ff5e1da/300x426f0.5_0.506964_1.0q80/kolak-labu-kuning-foto-resep-utama.webp'),
+
+('Rendang Daging Sapi Padang',
+ 'Daging sapi dengan bumbu lengkap.',
+ E'500g daging sapi
+750ml santan
+Garam
+Kecap
+Cabai merah
+Cabai pedas
+Bawang merah
+Bawang putih
+Lengkuas
+Serai
+Bunga lawang
+Kayu manis
+Pala
+Daun jeruk
+Daun salam
+Ketumbar bubuk',
+ 1,
+ 'https://img-global.cpcdn.com/recipes/2033c1003b3b3e86/300x426f0.5434_0.499372_1.00126q80/rendang-daging-sapi-padang-foto-resep-utama.webp');
+
+-- Buat tabel favorit (yang sebelumnya terpotong)
+CREATE TABLE favorit (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    resep_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (resep_id) REFERENCES resep(id)
+);
+
+-- Buat tabel update_resep
+CREATE TABLE update_resep (
+    id SERIAL PRIMARY KEY,
+    resep_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    nama_resep VARCHAR(150),
+    ingredients TEXT,
+    deskripsi TEXT,
+    gambar TEXT,
+    status VARCHAR(50) DEFAULT 'pending', -- pending, approved, rejected
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resep_id) REFERENCES resep(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- Buat user dan beri hak akses
+-- Hapus user jika sudah ada (opsional, hati-hati)
+DROP USER IF EXISTS admin_user;
+DROP USER IF EXISTS normal_user;
+
+-- Buat user baru
+CREATE USER admin_user WITH PASSWORD 'admin123';
+CREATE USER normal_user WITH PASSWORD 'user123';
+
+-- Beri hak akses ke admin_user
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO admin_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO admin_user;
+
+-- Beri hak akses ke normal_user
+GRANT SELECT, INSERT ON resep, kategori, update_resep TO normal_user;
+GRANT SELECT ON users TO normal_user;  -- mungkin normal_user boleh lihat users?
+GRANT INSERT ON favorit TO normal_user;  -- normal_user bisa menambah favorit
+
+-- Cabut hak DELETE/UPDATE dari normal_user
+REVOKE DELETE, UPDATE ON resep, kategori FROM normal_user;
+
+-- Buat fungsi dan trigger untuk update timestamp
+CREATE OR REPLACE FUNCTION update_resep_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.created_at = CURRENT_TIMESTAMP;
+   RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_resep
+BEFORE UPDATE ON resep
+FOR EACH ROW
+EXECUTE FUNCTION update_resep_timestamp();
+
+-- Buat view
+CREATE OR REPLACE VIEW view_resep_kategori AS
+SELECT 
+    r.id,
+    r.nama_resep,
+    r.deskripsi,
+    r.ingredients,
+    r.gambar,
+    k.nama_kategori
+FROM resep r
+JOIN kategori k ON r.kategori_id = k.id;
+
+-- Buat view favorit user
+CREATE OR REPLACE VIEW view_favorit_user AS
+SELECT u.username, r.nama_resep
+FROM favorit f
+JOIN users u ON f.user_id = u.id
+JOIN resep r ON f.resep_id = r.id;
+</file>
+
+<file path="middleware/auth.js">
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET, JWT_EXPIRE } from '../config.js';
+
+export const generateToken = (userId) => {
+  return jwt.sign({ id: userId }, JWT_SECRET, {
+    expiresIn: JWT_EXPIRE,
+  });
+};
+
+export const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+</file>
+
+<file path="middleware/requireAuth.js">
+import { verifyToken } from './auth.js';
+import { isBlacklisted } from './tokenBlacklist.js';
+
+export const authMiddleware = (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]; // Bearer token
+
+    if (!token) {
+      return res.status(401).json({ message: 'Token tidak ditemukan' });
+    }
+
+    // Check blacklist first
+    if (isBlacklisted(token)) {
+      return res.status(401).json({ message: 'Token sudah di-logout' });
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return res.status(401).json({ message: 'Token tidak valid atau expired' });
+    }
+
+    req.userId = decoded.id;
+    next();
+  } catch (error) {
+    res.status(500).json({ message: 'Error autentikasi', error: error.message });
+  }
+};
+</file>
+
+<file path="middleware/tokenBlacklist.js">
+const blacklist = new Set();
+
+export const addToken = (token) => {
+  blacklist.add(token);
+};
+
+export const isBlacklisted = (token) => {
+  return blacklist.has(token);
+};
+
+export default { addToken, isBlacklisted };
+</file>
+
+<file path="models/Favorite.js">
+import { DataTypes } from 'sequelize';
+
+const defineFavorite = (sequelize, User, Recipe) => {
+  const Favorite = sequelize.define('Favorite', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+    },
+    recipeId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'recipes',
+        key: 'id',
+      },
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+    },
+  }, {
+    timestamps: true,
+    tableName: 'favorites',
+    indexes: [
+      {
+        unique: true,
+        fields: ['userId', 'recipeId'],
+      },
+    ],
+  });
+
+  // Relasi
+
+  Favorite.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+  Favorite.belongsTo(Recipe, { foreignKey: 'recipeId', as: 'recipe', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+
+  User.hasMany(Favorite, { foreignKey: 'userId', as: 'favorites', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+  Recipe.hasMany(Favorite, { foreignKey: 'recipeId', as: 'favoritedBy', onDelete: 'CASCADE', onUpdate: 'CASCADE' });
+
+  return Favorite;
+};
+
+export default defineFavorite;
+</file>
+
+<file path="models/Rating.js">
+import { DataTypes } from 'sequelize';
+
+const defineRating = (sequelize, User, Recipe) => {
+  const Rating = sequelize.define('Rating', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    score: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      validate: {
+        min: 1,
+        max: 5,
+      },
+      comment: 'Rating dari 1-5',
+    },
+    comment: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+    recipeId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'recipes',
+        key: 'id',
+      },
+    },
+  }, {
+    tableName: 'ratings',
+    timestamps: true,
+    indexes: [
+      {
+        unique: true,
+        fields: ['userId', 'recipeId'],
+        name: 'unique_user_recipe_rating',
+      },
+    ],
+  });
+
+  // Set associations directly (User and Recipe are passed in)
+  Rating.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Rating.belongsTo(Recipe, { foreignKey: 'recipeId', as: 'recipe' });
+
+  User.hasMany(Rating, { foreignKey: 'userId', as: 'ratings' });
+  Recipe.hasMany(Rating, { foreignKey: 'recipeId', as: 'ratings' });
+
+  return Rating;
+};
+
+export default defineRating;
+</file>
+
+<file path="models/Recipe.js">
+import { DataTypes } from 'sequelize';
+
+const defineRecipe = (sequelize, User) => {
+  const Recipe = sequelize.define('Recipe', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    title: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        len: [3, 255],
+      },
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    category: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    ingredients: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: [],
+    },
+    instructions: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    image: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    prepTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Waktu persiapan dalam menit',
+    },
+    cookTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Waktu memasak dalam menit',
+    },
+    servings: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 1,
+    },
+    difficulty: {
+      type: DataTypes.ENUM('Mudah', 'Sedang', 'Sulit'),
+      allowNull: false,
+      defaultValue: 'Sedang',
+    },
+    userId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+  }, {
+    timestamps: true,
+    tableName: 'recipes',
+  });
+
+  // Relasi
+  Recipe.belongsTo(User, { foreignKey: 'userId', as: 'author' });
+  User.hasMany(Recipe, { foreignKey: 'userId', as: 'recipes' });
+
+  return Recipe;
+};
+
+export default defineRecipe;
+</file>
+
+<file path="models/User.js">
+import { DataTypes } from 'sequelize';
+
+const defineUser = (sequelize) => {
+  const User = sequelize.define('User', {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        len: [3, 50],
+      },
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        isEmail: true,
+      },
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        len: [6, 255],
+      },
+    },
+    avatar: {
+      type: DataTypes.STRING,
+      defaultValue: 'https://via.placeholder.com/150',
+    },
+  }, {
+    timestamps: true,
+    tableName: 'users',
+  });
+
+  return User;
+};
+
+export default defineUser;
+</file>
+
+<file path="package.json">
+{
+  "name": "resep-app-backend",
+  "version": "1.0.0",
+  "description": "Backend untuk aplikasi resep dengan authentication",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "sequelize": "^6.35.2"
+  },
+  "devDependencies": {
+    "axios": "^1.13.2",
+    "nodemon": "^3.0.1"
+  }
+}
+</file>
+
+<file path="pg_hba.conf">
+# PostgreSQL Client Authentication Configuration File
+# ===================================================
+
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            scram-sha-256
+host    all             all             ::1/128                 scram-sha-256
+host    all             all             0.0.0.0/0               scram-sha-256
+host    all             all             ::/0                    scram-sha-256
+</file>
+
+<file path="README.md">
+# Backend Resep App
+
+Backend untuk aplikasi resep dengan authentication menggunakan Node.js, Express, dan PostgreSQL.
+
+## Setup
+
+### 1. Install PostgreSQL
+- Download dari https://www.postgresql.org/download/
+- Install dan set password untuk user `postgres`
+- Pastikan PostgreSQL running
+
+### 2. Buat Database
+Buka PostgreSQL command line atau pgAdmin, lalu buat database:
+```sql
+CREATE DATABASE resep_app;
+```
+
+### 3. Install Dependencies
+```bash
+npm install
+```
+
+### 4. Environment Variables
+Update file `.env`:
+```
+PORT=5010
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=resep_app
+DB_USER=postgres
+DB_PASSWORD=your_postgres_password
+JWT_SECRET=your-super-secret-key-change-in-production
+JWT_EXPIRE=7d
+```
+
+### 5. Run Server
+```bash
+# Development mode (dengan auto-reload)
+npm run dev
+
+# Production mode
+npm start
+```
+
+Server akan berjalan di `http://localhost:5010`
+
+## API Endpoints
+
+### Authentication
+
+#### 1. Register
+- **URL**: `POST /api/auth/register`
+- **Body**:
+```json
+{
+  "name": "username",
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+- **Response**:
+```json
+{
+  "message": "Registrasi berhasil",
+  "token": "jwt_token_here",
+  "user": {
+    "id": "user_id",
+    "name": "username",
+    "email": "user@example.com",
+    "avatar": "avatar_url"
+  }
+}
+```
+
+#### 2. Login
+- **URL**: `POST /api/auth/login`
+- **Body**:
+```json
+{
+  "name": "username",
+  "password": "password123"
+}
+```
+- **Response**: Same as register
+
+#### 3. Get Current User (Protected)
+- **URL**: `GET /api/auth/me`
+- **Header**: `Authorization: Bearer <token>`
+- **Response**:
+```json
+{
+  "user": {
+    "id": "user_id",
+    "name": "username",
+    "email": "user@example.com",
+    "avatar": "avatar_url"
+  }
+}
+```
+
+#### 4. Logout (Protected)
+- **URL**: `POST /api/auth/logout`
+- **Header**: `Authorization: Bearer <token>`
+- **Response**:
+```json
+{
+  "message": "Logout berhasil"
+}
+```
+
+### Recipes
+
+#### 1. Get All Recipes
+- **URL**: `GET /api/recipes`
+- **Response**:
+```json
+{
+  "message": "Berhasil mengambil semua resep",
+  "recipes": [...]
+}
+```
+
+#### 2. Get Recipe by ID
+- **URL**: `GET /api/recipes/:id`
+- **Response**: Single recipe object
+
+#### 3. Get Recipes by Category
+- **URL**: `GET /api/recipes/category/:category`
+- **Response**: Array of recipes in that category
+
+#### 4. Create Recipe (Protected)
+- **URL**: `POST /api/recipes`
+- **Header**: `Authorization: Bearer <token>`
+- **Body**:
+```json
+{
+  "title": "Nasi Goreng",
+  "description": "Nasi goreng Indonesia klasik",
+  "category": "Nasi",
+  "ingredients": ["nasi", "telur", "bawang", "kecap manis"],
+  "instructions": "1. Panaskan minyak... 2. Masukkan bawang...",
+  "image": "https://...",
+  "prepTime": 10,
+  "cookTime": 15,
+  "servings": 2,
+  "difficulty": "Mudah"
+}
+```
+
+#### 5. Update Recipe (Protected)
+- **URL**: `PUT /api/recipes/:id`
+- **Header**: `Authorization: Bearer <token>`
+- **Body**: Same as create recipe
+
+#### 6. Delete Recipe (Protected)
+- **URL**: `DELETE /api/recipes/:id`
+- **Header**: `Authorization: Bearer <token>`
+
+#### 7. Get My Recipes (Protected)
+- **URL**: `GET /api/recipes/user/my-recipes`
+- **Header**: `Authorization: Bearer <token>`
+
+### Favorites
+
+#### 1. Get My Favorites (Protected)
+- **URL**: `GET /api/favorites`
+- **Header**: `Authorization: Bearer <token>`
+- **Response**:
+```json
+{
+  "message": "Berhasil mengambil favorit",
+  "favorites": [...]
+}
+```
+
+#### 2. Add to Favorites (Protected)
+- **URL**: `POST /api/favorites`
+- **Header**: `Authorization: Bearer <token>`
+- **Body**:
+```json
+{
+  "recipeId": "recipe_uuid"
+}
+```
+
+#### 3. Remove from Favorites (Protected)
+- **URL**: `DELETE /api/favorites/:recipeId`
+- **Header**: `Authorization: Bearer <token>`
+
+#### 4. Check if Favorite (Protected)
+- **URL**: `GET /api/favorites/check/:recipeId`
+- **Header**: `Authorization: Bearer <token>`
+- **Response**:
+```json
+{
+  "isFavorite": true/false
+}
+```
+
+## Project Structure
+```
+backend/
+├── models/           # Database models (Sequelize)
+├── controllers/      # Logic bisnis
+├── routes/          # API routes
+├── middleware/      # Auth middleware
+├── server.js        # Entry point
+├── db.js           # Database connection
+├── config.js       # Configuration
+├── .env            # Environment variables
+└── package.json
+```
+
+## Database
+- **Type**: PostgreSQL
+- **ORM**: Sequelize
+- **Connection**: localhost:5432
+
+## Error Handling
+- 400: Bad request (validasi gagal)
+- 401: Unauthorized (login gagal)
+- 409: Conflict (user sudah ada)
+- 500: Server error
+
+## Next Steps
+- Integrate dengan frontend
+- Tambah recipe endpoints
+- Tambah favorite/bookmark system
+- Implementasi refresh token
+</file>
+
+<file path="routes/authRoutes.js">
+import express from 'express';
+import { register, login, getCurrentUser, logout } from '../controllers/authController.js';
+import { authMiddleware } from '../middleware/requireAuth.js';
+
+const router = express.Router();
+
+// Public routes
+router.post('/register', register);
+router.post('/login', login);
+
+// Protected routes
+router.get('/me', authMiddleware, getCurrentUser);
+router.post('/logout', authMiddleware, logout);
+
+export default router;
+</file>
+
+<file path="routes/favoriteRoutes.js">
+import express from 'express';
+import {
+  getUserFavorites,
+  addFavorite,
+  removeFavorite,
+  isFavorite,
+} from '../controllers/favoriteController.js';
+import { authMiddleware } from '../middleware/requireAuth.js';
+
+const router = express.Router();
+
+// Protected routes (semua memerlukan auth)
+router.get('/', authMiddleware, getUserFavorites);
+router.post('/', authMiddleware, addFavorite);
+router.delete('/:recipeId', authMiddleware, removeFavorite);
+router.get('/check/:recipeId', authMiddleware, isFavorite);
+
+export default router;
+</file>
+
+<file path="routes/ratingRoutes.js">
+import express from 'express';
+import { upsertRating, getRatingsByRecipe, removeRating } from '../controllers/ratingController.js';
+import { authMiddleware } from '../middleware/requireAuth.js';
+
+const router = express.Router();
+
+// Protected: add or update rating
+router.post('/', authMiddleware, upsertRating);
+
+// Public: get ratings and average for a recipe
+router.get('/:recipeId', getRatingsByRecipe);
+
+// Protected: remove rating by current user
+router.delete('/:recipeId', authMiddleware, removeRating);
+
+export default router;
+</file>
+
+<file path="routes/recipeRoutes.js">
+import express from 'express';
+import {
+  getAllRecipes,
+  getRecipeById,
+  getRecipesByCategory,
+  createRecipe,
+  updateRecipe,
+  deleteRecipe,
+  getUserRecipes,
+} from '../controllers/recipeController.js';
+import { authMiddleware } from '../middleware/requireAuth.js';
+
+const router = express.Router();
+
+// Public routes
+router.get('/', getAllRecipes);
+router.get('/:id', getRecipeById);
+router.get('/category/:category', getRecipesByCategory);
+
+// Protected routes
+router.post('/', authMiddleware, createRecipe);
+router.put('/:id', authMiddleware, updateRecipe);
+router.delete('/:id', authMiddleware, deleteRecipe);
+router.get('/user/my-recipes', authMiddleware, getUserRecipes);
+
+export default router;
+</file>
+
+<file path="scripts/seed.js">
+import bcrypt from 'bcryptjs';
+import { connectDB, User, Recipe, Favorite } from '../db.js';
+
+const run = async () => {
+  try {
+    await connectDB();
+
+    const passwordPlain = 'password123';
+    const hashed = await bcrypt.hash(passwordPlain, 10);
+
+    const [user] = await User.findOrCreate({
+      where: { email: 'seed_user@example.com' },
+      defaults: {
+        name: 'seed_user',
+        email: 'seed_user@example.com',
+        password: hashed,
+      },
+    });
+
+    console.log('User ready:', user.id, user.email);
+
+    const [recipe] = await Recipe.findOrCreate({
+      where: { title: 'Sample Nasi Goreng' },
+      defaults: {
+        title: 'Sample Nasi Goreng',
+        description: 'Contoh resep nasi goreng sederhana',
+        category: 'Main',
+        ingredients: ['Nasi', 'Telur', 'Bawang', 'Kecap'],
+        instructions: 'Tumis bumbu, masukkan nasi, aduk, sajikan',
+        userId: user.id,
+      },
+    });
+
+    console.log('Recipe ready:', recipe.id, recipe.title);
+
+    // Optionally create a favorite entry
+    await Favorite.findOrCreate({
+      where: { userId: user.id, recipeId: recipe.id },
+      defaults: { userId: user.id, recipeId: recipe.id },
+    });
+
+    console.log('Favorite ensured for user -> recipe');
+
+    process.exit(0);
+  } catch (err) {
+    console.error('Seed error', err);
+    process.exit(1);
+  }
+};
+
+run();
+</file>
+
+<file path="scripts/test_api.js">
+import axios from 'axios';
+
+const API = 'http://localhost:5010/api';
+
+const main = async () => {
+  try {
+    // Login seed user
+    const loginRes = await axios.post(`${API}/auth/login`, {
+      identifier: 'seed_user',
+      password: 'password123',
+    });
+
+    console.log('Login response status:', loginRes.status);
+    const token = loginRes.data.token;
+    console.log('Token length:', token?.length || 0);
+
+    // Get recipes
+    const recipesRes = await axios.get(`${API}/recipes`);
+    console.log('GET /recipes status:', recipesRes.status);
+    console.log('Recipes count:', recipesRes.data?.recipes?.length || 0);
+
+    const recipe = recipesRes.data.recipes?.[0];
+    if (!recipe) {
+      console.log('No recipe found to favorite');
+      return;
+    }
+
+    // Add favorite
+    const favRes = await axios.post(
+      `${API}/favorites`,
+      { recipeId: recipe.id },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    console.log('POST /favorites status:', favRes.status);
+
+    // Get favorites
+    const myFavs = await axios.get(`${API}/favorites`, { headers: { Authorization: `Bearer ${token}` } });
+    console.log('GET /favorites status:', myFavs.status);
+    console.log('Favorites count:', myFavs.data?.favorites?.length || 0);
+  } catch (err) {
+    if (err.response) {
+      console.error('API error', err.response.status, err.response.data);
+    } else {
+      console.error('Error', err.message);
+    }
+    process.exit(1);
+  }
+};
+
+main();
+</file>
+
+<file path="server.js">
+import express from 'express';
+import cors from 'cors';
+import { connectDB } from './db.js';
+import { PORT } from './config.js';
+import authRoutes from './routes/authRoutes.js';
+import recipeRoutes from './routes/recipeRoutes.js';
+import favoriteRoutes from './routes/favoriteRoutes.js';
+import ratingRoutes from './routes/ratingRoutes.js';
+
+const app = express();
+
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:5173', // Vite dev server port
+  credentials: true,
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Wrap startup in async IIFE to properly await DB connection
+(async () => {
+  // Connect Database
+  await connectDB();
+
+  // Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/recipes', recipeRoutes);
+app.use('/api/favorites', favoriteRoutes);
+app.use('/api/ratings', ratingRoutes);
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ message: 'Server running smoothly!' });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route tidak ditemukan' });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Server error', error: err.message });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
+})(); // Close async IIFE
+</file>
+
+</files>
