@@ -9,13 +9,13 @@ import recipeRoutes from './routes/recipeRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
 import ratingRoutes from './routes/ratingRoutes.js';
 import { verifyToken } from './middleware/auth.js';
-import path from 'path';
 
 const app = express();
 
 // Middleware
 // Build allowlist from ALLOWED_ORIGINS or FRONTEND_URL with sensible defaults
 const defaultLocal = 'http://localhost:5173';
+// Add your deployed frontend origin here as a safe default for convenience.
 const defaultFrontend = 'https://our-recepi081.vercel.app';
 
 let allowList = [];
@@ -69,9 +69,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// Serve uploaded files (created by multer) from /uploads
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Wrap startup in async IIFE to properly await DB connection
 (async () => {
