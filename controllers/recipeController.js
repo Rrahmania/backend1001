@@ -188,9 +188,15 @@ export const deleteRecipe = async (req, res) => {
       return res.status(404).json({ message: 'Resep tidak ditemukan' });
     }
 
-    // Cek apakah user adalah pembuat resep
-    if (recipe.userId !== req.userId) {
-      return res.status(403).json({ message: 'Anda tidak memiliki izin untuk menghapus resep ini' });
+    // Debug/logging: show both ids to help diagnose permission issues
+    console.log(`DELETE /api/recipes/${id} requested by userId:`, req.userId, 'recipe.userId:', recipe.userId);
+
+    // Cek apakah user adalah pembuat resep (compare as strings to avoid type mismatches)
+    const ownerId = recipe.userId ? String(recipe.userId) : null;
+    const requesterId = req.userId ? String(req.userId) : null;
+
+    if (!ownerId || ownerId !== requesterId) {
+      return res.status(403).json({ message: 'Anda tidak memiliki izin untuk menghapus resep ini', ownerId, requesterId });
     }
 
     await recipe.destroy();
