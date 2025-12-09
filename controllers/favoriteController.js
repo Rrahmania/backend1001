@@ -35,6 +35,9 @@ export const addFavorite = async (req, res) => {
   try {
     const { recipeId } = req.body;
 
+    // Debug: log incoming request info
+    console.log('POST /api/favorites - userId:', req.userId, 'recipeId:', recipeId);
+
     if (!recipeId) {
       return res.status(400).json({ message: 'recipeId harus diisi' });
     }
@@ -64,6 +67,11 @@ export const addFavorite = async (req, res) => {
       favorite,
     });
   } catch (error) {
+    console.error('Error in addFavorite:', error && error.stack ? error.stack : error);
+    // Provide more detailed error for FK constraint failures
+    if (error && error.name === 'SequelizeForeignKeyConstraintError') {
+      return res.status(400).json({ message: 'Resep tidak ditemukan (foreign key)', error: error.message });
+    }
     res.status(500).json({ message: 'Error menambah favorit', error: error.message });
   }
 };
@@ -72,6 +80,8 @@ export const addFavorite = async (req, res) => {
 export const removeFavorite = async (req, res) => {
   try {
     const { recipeId } = req.params;
+
+    console.log('DELETE /api/favorites/:recipeId - userId:', req.userId, 'recipeId:', recipeId);
 
     const favorite = await Favorite.findOne({
       where: { userId: req.userId, recipeId },
@@ -87,6 +97,7 @@ export const removeFavorite = async (req, res) => {
       message: 'Resep berhasil dihapus dari favorit',
     });
   } catch (error) {
+    console.error('Error in removeFavorite:', error && error.stack ? error.stack : error);
     res.status(500).json({ message: 'Error menghapus favorit', error: error.message });
   }
 };
@@ -96,6 +107,8 @@ export const isFavorite = async (req, res) => {
   try {
     const { recipeId } = req.params;
 
+    console.log('GET /api/favorites/check/:recipeId - userId:', req.userId, 'recipeId:', recipeId);
+
     const favorite = await Favorite.findOne({
       where: { userId: req.userId, recipeId },
     });
@@ -104,6 +117,7 @@ export const isFavorite = async (req, res) => {
       isFavorite: !!favorite,
     });
   } catch (error) {
+    console.error('Error in isFavorite:', error && error.stack ? error.stack : error);
     res.status(500).json({ message: 'Error mengecek favorit', error: error.message });
   }
 };
