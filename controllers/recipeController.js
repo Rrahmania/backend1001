@@ -125,7 +125,7 @@ export const createRecipe = async (req, res) => {
       cookTime,
       servings,
       difficulty,
-      userId: req.userId,
+      userId: req.userId || null,
     });
 
     res.status(201).json({
